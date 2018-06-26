@@ -4,6 +4,7 @@ const years = []
 const months = []
 const days = []
 const task = ''
+const colors = ["#e3a65d", "#a67abc", "#8a97e0", "#1fb9a2", "#636363", "#e44848"];
 for (let i = 1990; i <= date.getFullYear(); i++) {
   years.push(i)
 }
@@ -26,7 +27,7 @@ Page({
     currentDate: '',
     dayList: '',
     currentDayList: '',
-    currentDayStates: '', 
+    currentDayStates: '',
     currentDayHaveTaskStates: '',
     currentObj: '',
     currentDay: '',
@@ -45,13 +46,23 @@ Page({
     taskKeyList: [],
     taskKeyListSize: [],
     showModalStatus: false,
-    
+
     // temp 
     tempTaskID: [],
     tempTaskName: [],
     tempTaskContent: [],
     tempUserName: [],
     tempSelectedDays: [],
+
+    // completed
+    completedTaskItems: [],
+    completedTaskBackToProcessingTaskID: [],
+    showCompletedTasks: false,
+    showCompletedTasksSecondlayer: false,
+    noCompletedTask: true,
+
+    tempSliderValue: 0,
+    tempColor: "#e3a65d",
     isTempGroup: false,
     showShareMessage: false,
     sendTask: '',
@@ -64,7 +75,13 @@ Page({
   },
   onLoad: function (options) {
     // parse and store the data sent by the sharer
-    this.getInviteCode(options)
+    this.getInviteCode(options);
+    wx.getStorage({
+      key: 'taskCount',
+      success: function(res) {
+        app.globalData.taskCount = res.data
+      },
+    })
     var currentObj = this.getCurrentDayString()
     this.setData({
       currentDate: currentObj.getFullYear() + '年' + (currentObj.getMonth() + 1) + '月' + currentObj.getDate() + '日',
@@ -272,6 +289,24 @@ Page({
             day: day,
             key: key,
           };
+          app.globalData.selectedDays.sort(function (a, b) {
+            if (a.year < b.year)
+              return -1;
+            else if (a.year > b.year)
+              return 1;
+            else {
+              if (a.month < b.month)
+                return - 1;
+              else if (a.month > b.month)
+                return 1;
+              else {
+                if (a.day < b.day)
+                  return - 1;
+                else if (a.day > b.day)
+                  return 1;
+              }
+            }
+          });
         } else {
           s[key] = !s[key];
           this.setData({
@@ -334,6 +369,34 @@ Page({
         showModalStatus: false,
       })
 
+    } else if (e.detail.target.dataset.submittype == 'returnToProcessing') {
+      if (e.detail.value.checkbox.length == 0) {
+        wx.showToast({
+          title: '请至少选择一个任务',
+          icon: 'none',
+          duration: 1000
+        })
+      } else {
+        var completedTaskBackToProcessingTaskID = [];
+        for (var i = 0; i < e.detail.value.checkbox.length; i++) {
+          var taskKey = e.detail.value.checkbox[i];
+          var taskKeyString = taskKey + '';
+          var value = wx.getStorageSync(taskKeyString)
+          var singleTaskItem = {
+            taskID: '',
+            taskName: '',
+            selectedDays: '',
+          };
+          singleTaskItem.taskID = value.taskID;
+          singleTaskItem.taskName = value.taskName;
+          singleTaskItem.selectedDays = value.selectedDays;
+          completedTaskBackToProcessingTaskID.push(singleTaskItem);
+        }
+        this.setData({
+          completedTaskBackToProcessingTaskID: completedTaskBackToProcessingTaskID,
+          showCompletedTasksSecondlayer: true,
+        })
+      }
     } else {
       if (e.detail.value.input == "") {
         wx.showToast({
@@ -341,15 +404,18 @@ Page({
           icon: 'none',
           duration: 1000
         })
-      } else if (app.globalData.selectedDaysSize==0) {
+      } else if (app.globalData.selectedDaysSize == 0) {
         wx.showToast({
           title: '请至少选择一天',
           icon: 'none',
           duration: 1000
         })
       } else {
-        // console.log('form发生了submit事件，携带数据为：', e.detail.value);
         var taskKey = ++app.globalData.taskCount;
+        wx.setStorage({
+          key: 'taskCount',
+          data: app.globalData.taskCount,
+        })
         var that = this;
         var s = that.data.selectedDays;
         var s1 = that.data.currentDayHaveTaskStates;
@@ -420,14 +486,16 @@ Page({
         }
         else {
           app.globalData.taskCount--;
+          wx.setStorage({
+            key: 'taskCount',
+            data: app.globalData.taskCount,
+          })
         }
       }
     }
-
-
   },
   formReset: function () {
-    // console.log('form发生了reset事件');
+
   },
   startAddingTask: function () {
     this.setData({
@@ -467,21 +535,6 @@ Page({
       month: this.data.months[val[1]],
       day: this.data.days[val[2]]
     })
-  },
-    // This function is written for debug purpose, 
-  // it will show all the data in the local repository.
-  // 此功能: getTaskInfo 是用于除错使用的
-  // 将打印出所有本地储存的资料
-  getTasksInfo: function () {
-    for (var i = 1; i <= app.globalData.taskCount; i++) {
-      var taskKeyString = i + '';
-      wx.getStorage({
-        key: taskKeyString,
-        success: function (res) {
-          // console.log(res.data);
-        }
-      })
-    }
   },
   getToTask: function (keyList, keyListSize) {
     var that = this;
@@ -555,15 +608,17 @@ Page({
       var days = task.selectedDays;
 
       for (var j = 0; j < days.length; j++) {
+        var y = days[j].year;
         var m = days[j].month;
         // current month
         var cm;
+        var cy = cur.substring(0,4);
         if (cur.substr(6, 1) == '月') {
           cm = cur.substr(5, 1);
         } else {
           cm = cur.substr(5, 2);
         }
-        if (m == cm) {
+        if (m == cm && y == cy) {
           if (task.status != 'completed') {
             s[days[j].key] = true;
             s1[days[j].key][s2[days[j].key]] = i;
@@ -646,20 +701,6 @@ Page({
       name: e.detail.userInfo.nickName,
       hasUserInfo: true
     })
-    // DEBUG USAGE
-    // console.log("已获得使用者数据 ");
-    // console.log(this.data);
-    // console.log("进入小程序");
-  }, groupSwitchClick: function (e) {
-    this.setData({
-      isTempGroup: e.detail.value,
-      showShareMessage: e.detail.value,
-    })
-    if (this.data.isTempGroup) {
-      // open the sharing function
-    } else {
-      // close the sharing function if it's opened
-    }
   },
   closeShareMsg: function () {
     this.setData({
@@ -724,6 +765,10 @@ Page({
     }
     if (!found) {
       var taskKey = ++app.globalData.taskCount;
+      wx.setStorage({
+        key: 'taskCount',
+        data: app.globalData.taskCount,
+      })
       var that = this;
       var s = that.data.selectedDays;
       var s1 = that.data.currentDayHaveTaskStates;
@@ -829,4 +874,119 @@ Page({
       showReceiveTask: false,
     })
   },
-})  
+  sliderChange: function (e) {
+    var value = e.detail.value;
+    var currentValue = this.data.tempSliderValue;
+    if (value != currentValue) {
+      // modify the value
+      let color = colors[value];
+      this.setData({
+        tempSliderValue: value,
+        tempColor: color,
+      })
+    }
+  },
+  showCompletedTasks: function () {
+    if (app.globalData.taskCount == 0) {
+      // no completed task
+    } else {
+
+      var completedTaskItems = [];
+      for (var i = 1; i <= app.globalData.taskCount; i++) {
+        var taskKeyString = i + '';
+        try {
+          var value = wx.getStorageSync(taskKeyString)
+          if (value) {
+            if (value.status == 'completed') {
+              var singleTaskItem = {
+                taskID: '',
+                taskName: '',
+                selectedDays: '',
+              };
+              singleTaskItem.taskID = value.taskID;
+              singleTaskItem.taskName = value.taskName;
+              singleTaskItem.selectedDays = value.selectedDays;
+              completedTaskItems.push(singleTaskItem);
+            }
+          }
+        } catch (e) {
+          console.log('there is no such stored data with the key ' + taskKeyString);
+          console.log('error message: ' + e);
+        }
+      }
+      this.setData({
+        completedTaskItems: completedTaskItems,
+      })
+    }
+    this.setData({
+      showCompletedTasks: true,
+    })
+    var isanycompleted = this.checkanycompleted();
+    if (!isanycompleted) {
+      this.setData({
+        noCompletedTask: true,
+      })
+    } else {
+      this.setData({
+        noCompletedTask: false,
+      })
+    }
+  },
+  closeCompletedTasks: function () {
+    this.setData({
+      showCompletedTasks: false,
+    })
+  },
+  closeCompletedTasksSecond: function () {
+    this.setData({
+      showCompletedTasksSecondlayer: false,
+    })
+  },
+  changeStatusBackToProcessing: function () {
+    for (var i = 0; i < this.data.completedTaskBackToProcessingTaskID.length; i++) {
+      var taskKey = this.data.completedTaskBackToProcessingTaskID[i].taskID;
+      var taskKeyString = taskKey + '';
+      var task = wx.getStorageSync(taskKeyString);
+      var temp = Object.assign({}, task)
+      temp.status = 'processing';
+      wx.setStorageSync(taskKeyString, temp);
+    }
+    var that = this;
+    var currentDayHaveTaskStates = []
+    var currentDayStates = []
+    var taskKeyList = []
+    var taskKeyListSize = []
+    for (var i = 0; i < 42; i++) {
+      currentDayStates[i] = false;
+      currentDayHaveTaskStates[i] = false;
+      taskKeyList[i] = [];
+      taskKeyListSize[i] = 0;
+    }
+    that.setData({
+      currentDayStates: currentDayStates,
+      currentDayHaveTaskStates: currentDayHaveTaskStates,
+      taskKeyList: taskKeyList,
+      taskKeyListSize: taskKeyListSize
+    })
+
+    this.modifyDayHaveTaskStates();
+    this.setData({
+      showCompletedTasks: false,
+      showCompletedTasksSecondlayer: false,
+    })
+  },
+  checkanycompleted: function () {
+    var isAnyTaskCompleted = false;
+    // return true if there is any task whose status is 'completed'
+    for (var i = 1; i <= app.globalData.taskCount; i++) {
+      var taskKeyString = i + '';
+      var task = wx.getStorageSync(taskKeyString);
+      var temp = Object.assign({}, task)
+      if (temp.status == 'completed') {
+        isAnyTaskCompleted = true;
+        break;
+      }
+    }
+    return isAnyTaskCompleted;
+  }
+})
